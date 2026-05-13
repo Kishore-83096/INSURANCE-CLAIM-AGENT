@@ -1,0 +1,119 @@
+INSURANCE CLAIM AGENT - DOCKER RUN GUIDE
+
+Prerequisites:
+1. Docker Desktop must be running.
+2. Make sure FLASK/.env exists.
+3. Put your NVIDIA_API_KEY and other backend settings in FLASK/.env.
+
+Important:
+- Do not put real API keys inside Dockerfiles.
+- The docker-compose.yml file reads environment values from FLASK/.env.
+- Uploaded claim files are stored in a Docker volume named flask_uploads.
+- The backend saves uploads as a fixed file name, so each new upload replaces the previous claim file.
+
+Run the full app:
+1. Open a terminal in the project root:
+   D:\VENV\INSURANCE CLAIM AGENT
+
+2. Build and start both containers:
+   docker compose up --build
+
+   If Windows says "docker is not recognized", use Docker Desktop's full path:
+   $env:Path = "C:\Program Files\Docker\Docker\resources\bin;" + $env:Path
+   & "C:\Program Files\Docker\Docker\resources\bin\docker.exe" compose up --build
+
+   This also fixes this Docker Desktop build error:
+   docker-credential-desktop: executable file not found in %PATH%
+
+3. Open the frontend:
+   http://localhost:5173
+
+4. Backend health endpoint:
+   http://localhost:5000/api/health
+
+Stop the app:
+   docker compose down
+
+Stop the app and remove uploaded-file volume:
+   docker compose down -v
+
+Rebuild after code changes:
+   docker compose up --build
+
+View logs:
+   docker compose logs -f
+
+View only Flask logs:
+   docker compose logs -f flask-api
+
+View only React/Nginx logs:
+   docker compose logs -f react-web
+
+How the containers work:
+- flask-api runs Flask with Gunicorn on port 5000.
+- react-web builds the Vite React app and serves it with Nginx on port 5173.
+- React calls /api by default.
+- Nginx proxies /api requests from react-web to flask-api inside Docker.
+
+If port 5173 is busy:
+Edit docker-compose.yml and change:
+   "5173:80"
+to another host port, for example:
+   "8080:80"
+Then open:
+   http://localhost:8080
+
+If port 5000 is busy:
+Edit docker-compose.yml and change:
+   "5000:5000"
+to another host port, for example:
+   "5001:5000"
+The React container will still work because it talks to Flask inside Docker.
+
+Deploy Flask only on Render:
+1. Push this project to GitHub/GitLab.
+2. In Render, create a new Web Service.
+3. Select the repository.
+4. Set Runtime/Language to Docker.
+5. Use the FLASK folder as the service root directory, or set the Dockerfile path to:
+   FLASK/Dockerfile
+6. Add the environment variables from FLASK/.env in the Render dashboard.
+   Do not commit real API keys to GitHub.
+7. Set health check path to:
+   /api/health
+8. Deploy.
+
+Notes for Render:
+- docker-compose.yml is only for running both Flask and React together locally.
+- Render does not need docker-compose.yml for a single Flask web service.
+- The Flask Dockerfile binds to Render's PORT environment variable automatically.
+- If you deploy React somewhere else, set the frontend API base URL to the Render Flask URL.
+
+Deploy Flask and React as separate Render services:
+1. Deploy Flask first.
+   - Runtime/Language: Docker
+   - Root directory: FLASK
+   - Health check path: /api/health
+   - Add NVIDIA_API_KEY, NVIDIA_BASE_URL, NVIDIA_MODEL, SECRET_KEY, UPLOAD_FOLDER, MAX_CONTENT_LENGTH.
+   - Set CORS_ORIGINS to your React Render URL after React is created, for example:
+     https://your-react-service.onrender.com
+
+2. Copy the Flask public URL from Render, for example:
+   https://your-flask-service.onrender.com
+
+3. Deploy React as a separate Render service.
+   - Runtime/Language: Docker
+   - Root directory: REACT
+   - Add this environment variable in Render:
+     VITE_API_BASE_URL=https://your-flask-service.onrender.com
+
+4. Redeploy React after setting VITE_API_BASE_URL.
+   Vite reads VITE_API_BASE_URL at build time, so React must be rebuilt after this value changes.
+
+5. Redeploy Flask after setting CORS_ORIGINS to the React URL.
+
+Important for separate Render services:
+- docker-compose.yml is only for local combined development.
+- REACT/nginx.conf proxy_pass http://flask-api:5000 only works inside local Docker Compose.
+- On Render, React should call the Flask public URL through VITE_API_BASE_URL.
+- Flask must allow the React Render URL in CORS_ORIGINS.

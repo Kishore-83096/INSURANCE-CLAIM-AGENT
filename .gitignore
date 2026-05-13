@@ -1,0 +1,41 @@
+# Secrets and local environment
+.env
+.env.*
+FLASK/.env
+REACT/.env
+REACT/.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+FLASK/venv/
+
+# Flask runtime files
+FLASK/uploads/
+uploads/
+instance/
+*.log
+
+# Node / React
+node_modules/
+REACT/node_modules/
+dist/
+REACT/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker / local generated files
+vite-dev.log
+vite-dev.err
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
