@@ -1,0 +1,429 @@
+INSURANCE CLAIM AGENT - RUN GUIDE
+=================================
+
+This project contains two apps in one repository:
+
+- FLASK  = backend API
+- REACT  = frontend UI
+
+You can run the project in two ways:
+
+1. Docker Compose: easiest way to run both apps together.()
+2. Local development: run Flask and React in separate terminals.
+
+
+IMPORTANT SECURITY NOTE
+-----------------------
+
+Do not commit real API keys to Git.
+
+These files are intentionally ignored by .gitignore:
+
+- FLASK/.env
+- REACT/.env
+- REACT/.env.local
+
+
+PROJECT URLS
+------------
+
+When running with Docker Compose:
+
+- Frontend: http://localhost:5173
+- Backend:  http://localhost:5000
+- Health:   http://localhost:5000/api/health
+
+When running locally:
+
+- Frontend: http://localhost:5173
+- Backend:  http://127.0.0.1:5000
+- Health:   http://127.0.0.1:5000/api/health
+
+
+FRESH SETUP FROM GIT
+--------------------
+
+1. Clone the repository:
+
+   git clone YOUR_REPO_URL
+
+2. Enter the project folder:
+
+   cd "INSURANCE CLAIM AGENT"
+
+   If your folder has a different name, cd into that folder instead.
+
+3. Create the Flask env file:
+
+   Create:
+
+   FLASK/.env
+
+   Example:
+
+   FLASK_ENV=development
+   FLASK_DEBUG=True
+   UPLOAD_FOLDER=uploads
+   MAX_CONTENT_LENGTH=10485760
+   SECRET_KEY=change-this-secret
+   CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+   NVIDIA_API_KEY=your_nvidia_api_key_here
+   NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+   NVIDIA_MODEL=meta/llama-3.1-8b-instruct
+
+4. Optional: create the React env file:
+
+   Create:
+
+   REACT/.env.local
+
+   For local Flask:
+
+   VITE_API_BASE_URL=http://localhost:5000
+
+   For deployed Flask:
+
+   VITE_API_BASE_URL=https://insurance-claim-agent-zrm1.onrender.com
+
+   For normal local development without Docker, you can omit this file.
+   The Vite dev proxy will send /api requests to http://127.0.0.1:5000.
+
+   For Docker Compose, either create a root .env file beside docker-compose.yml
+   or run Docker Compose with --env-file REACT/.env.local.
+
+
+OPTION A: RUN WITH DOCKER COMPOSE
+--------------------------------
+
+Prerequisites:
+
+1. Docker Desktop is installed.
+2. Docker Desktop is running.
+3. FLASK/.env exists.
+
+Start both Flask and React:
+
+   docker compose up --build
+
+If you want Docker Compose to read REACT/.env.local directly:
+
+   docker compose --env-file REACT/.env.local up --build
+
+Open the app:
+
+   http://localhost:5173
+
+Check backend health:
+
+   http://localhost:5000/api/health
+
+Stop both containers:
+
+   docker compose down
+
+Stop containers and delete uploaded-file Docker volume:
+
+   docker compose down -v
+
+Rebuild after code changes:
+
+   docker compose up --build
+
+View all logs:
+
+   docker compose logs -f
+
+View Flask logs:
+
+   docker compose logs -f flask-api
+
+View React/Nginx logs:
+
+   docker compose logs -f react-web
+
+
+WINDOWS DOCKER PATH FIX
+-----------------------
+
+If PowerShell says:
+
+   docker is not recognized
+
+Run this once in the same terminal:
+
+   $env:Path = "C:\Program Files\Docker\Docker\resources\bin;" + $env:Path
+
+Then run Docker Compose with the full path:
+
+   & "C:\Program Files\Docker\Docker\resources\bin\docker.exe" compose up --build
+
+This can also fix:
+
+   docker-credential-desktop: executable file not found in %PATH%
+
+
+HOW DOCKER COMPOSE WORKS
+------------------------
+
+- flask-api runs Flask with Gunicorn on port 5000.
+- react-web builds the Vite React app and serves it with Nginx.
+- Browser opens React at http://localhost:5173.
+- Docker Compose builds React with VITE_API_BASE_URL from your environment.
+- If VITE_API_BASE_URL is not set, Docker Compose uses http://localhost:5000.
+- React calls Flask directly at the configured VITE_API_BASE_URL.
+- Nginx only serves the built React files.
+- Uploaded claim files are stored in the Docker volume flask_uploads.
+- Backend uploads use a fixed filename, so the latest upload replaces the previous claim file.
+
+
+DOCKER PORT CONFLICTS
+---------------------
+
+If port 5173 is busy:
+
+Edit docker-compose.yml:
+
+   "5173:80"
+
+Change it to:
+
+   "8080:80"
+
+Then open:
+
+   http://localhost:8080
+
+If port 5000 is busy:
+
+Edit docker-compose.yml:
+
+   "5000:5000"
+
+Change it to:
+
+   "5001:5000"
+
+Also set VITE_API_BASE_URL to the same host port before rebuilding.
+You can set it in the root .env file:
+
+   VITE_API_BASE_URL=http://localhost:5001
+
+Then rebuild:
+
+   docker compose up --build
+
+
+OPTION B: RUN LOCALLY WITHOUT DOCKER
+-----------------------------------
+
+Use this option when actively developing code.
+
+
+1. RUN FLASK BACKEND
+--------------------
+
+Open terminal 1 in the project root:
+
+   cd "INSURANCE CLAIM AGENT"
+
+Go to Flask folder:
+
+   cd FLASK
+
+Create a virtual environment:
+
+   python -m venv venv
+
+Activate it:
+
+   venv\Scripts\activate
+
+Install Python dependencies:
+
+   pip install -r requirements.txt
+
+Make sure FLASK/.env exists.
+
+Run Flask:
+
+   python app.py
+
+Backend should run at:
+
+   http://127.0.0.1:5000
+
+Health check:
+
+   http://127.0.0.1:5000/api/health
+
+
+2. RUN REACT FRONTEND
+---------------------
+
+Open terminal 2 in the project root:
+
+   cd "INSURANCE CLAIM AGENT"
+
+Go to React folder:
+
+   cd REACT
+
+Install Node dependencies:
+
+   npm install
+
+Run React dev server:
+
+   npm run dev
+
+Frontend should run at:
+
+   http://localhost:5173
+
+
+LOCAL REACT API CONFIG
+----------------------
+
+For local Flask:
+
+- Do not set VITE_API_BASE_URL.
+- React calls /api.
+- Vite proxy forwards /api to http://127.0.0.1:5000.
+
+For deployed Flask on Render:
+
+Create:
+
+   REACT/.env.local
+
+Add:
+
+   VITE_API_BASE_URL=https://insurance-claim-agent-zrm1.onrender.com
+
+Then restart React:
+
+   npm run dev
+
+Important:
+
+- Vite reads .env.local only when the dev server starts.
+- If you change REACT/.env.local, restart npm run dev.
+
+
+LOCAL VALIDATION COMMANDS
+-------------------------
+
+Run React lint:
+
+   cd REACT
+   npm run lint
+
+Build React:
+
+   cd REACT
+   npm run build
+
+Compile Flask Python files:
+
+   python -m compileall FLASK/main/services.py
+
+
+RENDER DEPLOYMENT NOTES
+-----------------------
+
+This repository can deploy Flask and React as separate Render services.
+
+Use one Git repo, but configure service root directories:
+
+Flask Render service:
+
+   Root Directory: FLASK
+   Runtime: Docker
+   Health Check Path: /api/health
+
+React Render service:
+
+   Root Directory: REACT
+   Runtime: Docker
+
+For separate Render services, REACT/nginx.conf must not proxy to flask-api.
+The name flask-api only exists inside local Docker Compose, not inside Render.
+React must call the deployed Flask URL through VITE_API_BASE_URL.
+
+If root directories are set correctly:
+
+- Pushing changes under FLASK redeploys only Flask.
+- Pushing changes under REACT redeploys only React.
+- Pushing root docs usually does not redeploy either service.
+
+
+RENDER FLASK ENVIRONMENT VARIABLES
+----------------------------------
+
+Set these in the Flask Render service Environment page:
+
+   FLASK_ENV=production
+   FLASK_DEBUG=False
+   UPLOAD_FOLDER=/app/uploads
+   MAX_CONTENT_LENGTH=10485760
+   SECRET_KEY=your_production_secret
+   CORS_ORIGINS=https://your-react-service.onrender.com
+   NVIDIA_API_KEY=your_nvidia_api_key_here
+   NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+   NVIDIA_MODEL=meta/llama-3.1-8b-instruct
+
+
+RENDER REACT ENVIRONMENT VARIABLES
+----------------------------------
+
+Set this in the React Render service Environment page:
+
+   VITE_API_BASE_URL=https://your-flask-service.onrender.com
+
+Example:
+
+   VITE_API_BASE_URL=https://insurance-claim-agent-zrm1.onrender.com
+
+Important:
+
+- Do not add /api at the end.
+- Vite reads VITE_API_BASE_URL at build time.
+- After changing it, use Clear build cache & deploy.
+- REACT/nginx.conf should only serve static React files on Render.
+
+
+COMMON ISSUES
+-------------
+
+1. React cannot connect to Flask locally
+
+Check:
+
+- Flask is running on http://127.0.0.1:5000.
+- React was restarted after .env.local changes.
+- FLASK/.env CORS_ORIGINS includes http://localhost:5173.
+
+2. React cannot connect to Flask on Render
+
+Check:
+
+- React has VITE_API_BASE_URL set to the Flask Render URL.
+- React was redeployed after setting VITE_API_BASE_URL.
+- Flask CORS_ORIGINS includes the React Render URL.
+
+3. Upload fails
+
+Check:
+
+- File is PDF or TXT.
+- File size is below MAX_CONTENT_LENGTH.
+- uploads folder or Docker volume is available.
+
+4. AI calls fail
+
+Check:
+
+- NVIDIA_API_KEY is set.
+- NVIDIA_BASE_URL is correct.
+- NVIDIA_MODEL is correct.
+- Render logs for Flask show the actual API error.

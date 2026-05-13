@@ -24,6 +24,8 @@ services:
   react-web:
     build:
       context: ./REACT
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:5000}
     container_name: insurance-claim-react
     depends_on:
       flask-api:
