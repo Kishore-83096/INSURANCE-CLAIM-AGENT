@@ -66,13 +66,21 @@ export const extractClaimText = async (file) => {
   return response.data;
 };
 
-export const importGoogleDriveFile = async (fileUrl) => {
+export const listGoogleDriveTestFiles = async () => {
+  const response = await axios.get(
+    `${API_BASE_URL}/api/claims/google-drive-test-files`
+  );
+
+  return response.data;
+};
+
+export const importGoogleDriveFile = async ({ fileId, fileUrl }) => {
   let response;
 
   try {
     response = await axios.post(
       `${API_BASE_URL}/api/claims/import-google-drive`,
-      { fileUrl },
+      { fileId, fileUrl },
       { responseType: "blob" }
     );
   } catch (error) {

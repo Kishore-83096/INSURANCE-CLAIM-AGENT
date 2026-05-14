@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from html import unescape as html_unescape
 from io import BytesIO
 from urllib.parse import parse_qs, unquote, urlparse
 import fitz  # PyMuPDF
@@ -10,6 +11,11 @@ from flask import request, jsonify, current_app, send_file
 from openai import OpenAI
 from werkzeug.http import parse_options_header
 from werkzeug.utils import secure_filename
+
+TEST_FILES_FOLDER_ID = "1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ"
+TEST_FILES_FOLDER_URL = (
+    f"https://drive.google.com/drive/folders/{TEST_FILES_FOLDER_ID}?usp=sharing"
+)
 
 
 # =========================
@@ -23,6 +29,7 @@ def home():
             "GET /api/health",
             "GET /api/nvidia/health",
             "POST /api/claims/upload",
+            "GET /api/claims/google-drive-test-files",
             "POST /api/claims/import-google-drive",
             "POST /api/claims/extract-text",
             "POST /api/claims/extract-fields",
@@ -153,6 +160,13 @@ def allowed_file(filename: str) -> bool:
     )
 
 
+def build_google_drive_file_url(file_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id or ""):
+        raise ValueError("Invalid Google Drive file ID.")
+
+    return f"https://drive.google.com/file/d/{file_id}/view"
+
+
 def extract_google_drive_file_id(file_url: str) -> str:
     parsed_url = urlparse((file_url or "").strip())
     host = parsed_url.netloc.lower()
@@ -178,6 +192,66 @@ def extract_google_drive_file_id(file_url: str) -> str:
     raise ValueError(
         "Could not find a Google Drive file ID. Open the Drive folder, copy a file link, and paste it here."
     )
+
+
+def parse_google_drive_folder_files(folder_html: str) -> list:
+    decoded_html = html_unescape(unquote(folder_html))
+    decoded_html = decoded_html.replace("\\u003d", "=")
+    decoded_html = decoded_html.replace("\\u0026", "&")
+
+    file_pattern = re.compile(
+        r'null,"([A-Za-z0-9_-]{20,})"\],null,null,null,'
+        r'"(application/pdf|text/plain)".{0,1200}?'
+        r'\[\[\["([^"]+\.(?:pdf|txt))",null,true\]\]\]',
+        re.IGNORECASE | re.DOTALL
+    )
+
+    size_pattern = re.compile(
+        r'Size:\s*([^"\n]+)',
+        re.IGNORECASE
+    )
+
+    files = []
+    seen_ids = set()
+
+    for match in file_pattern.finditer(decoded_html):
+        file_id = match.group(1)
+
+        if file_id in seen_ids:
+            continue
+
+        seen_ids.add(file_id)
+        entry_html = decoded_html[match.start():match.end() + 900]
+        size_match = size_pattern.search(entry_html)
+        size = ""
+
+        if size_match:
+            size = size_match.group(1).split("\\n", 1)[0]
+            size = size.split("\n", 1)[0].strip()
+
+        files.append({
+            "id": file_id,
+            "name": match.group(3),
+            "mimeType": match.group(2),
+            "size": size,
+            "url": build_google_drive_file_url(file_id)
+        })
+
+    return files
+
+
+def get_google_drive_test_files() -> list:
+    response = requests.get(TEST_FILES_FOLDER_URL, timeout=30)
+    response.raise_for_status()
+
+    files = parse_google_drive_folder_files(response.text)
+
+    if not files:
+        raise ValueError(
+            "No PDF or TXT test files were found in the Google Drive folder."
+        )
+
+    return files
 
 
 def get_filename_from_response(response, fallback_filename: str) -> str:
@@ -325,14 +399,39 @@ def upload_claim_file():
         }), 400
 
 
+def list_google_drive_test_files():
+    try:
+        return jsonify({
+            "success": True,
+            "folderUrl": TEST_FILES_FOLDER_URL,
+            "files": get_google_drive_test_files()
+        }), 200
+
+    except requests.RequestException as error:
+        return jsonify({
+            "success": False,
+            "error": f"Could not open the Google Drive folder: {str(error)}"
+        }), 400
+
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 400
+
+
 def import_google_drive_file():
     data = request.get_json(silent=True) or {}
     file_url = data.get("fileUrl", "")
+    file_id = data.get("fileId", "")
+
+    if file_id and not file_url:
+        file_url = build_google_drive_file_url(file_id)
 
     if not file_url:
         return jsonify({
             "success": False,
-            "error": "fileUrl is required."
+            "error": "fileUrl or fileId is required."
         }), 400
 
     try:

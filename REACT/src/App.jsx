@@ -19,6 +19,7 @@ import {
   checkNvidiaHealth,
   uploadClaimFile,
   extractClaimText,
+  listGoogleDriveTestFiles,
   importGoogleDriveFile,
   extractClaimFields,
   aiExtractClaimFields,
@@ -94,9 +95,6 @@ const fieldLabels = {
   attachments: "Attachments",
   initialEstimate: "Initial estimate",
 };
-
-const TEST_FILES_URL =
-  "https://drive.google.com/drive/folders/1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ?usp=sharing";
 
 function formatFileSize(bytes) {
   if (!bytes && bytes !== 0) return "";
@@ -360,6 +358,75 @@ function ResultModal({ result, onClose }) {
   );
 }
 
+function DriveFilePickerModal({
+  files,
+  importingFileId,
+  loading,
+  onClose,
+  onSelect,
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div
+        aria-labelledby="drive-modal-title"
+        aria-modal="true"
+        className="result-modal drive-modal"
+        role="dialog"
+      >
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Google Drive</p>
+            <h2 id="drive-modal-title">Test files</h2>
+          </div>
+          <button
+            aria-label="Close Google Drive file picker"
+            className="icon-button"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={19} strokeWidth={2.4} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          {loading ? (
+            <div className="loading-line">
+              <Loader2 className="spin" size={17} strokeWidth={2.3} />
+              <span>Loading Google Drive files.</span>
+            </div>
+          ) : files.length ? (
+            <div className="drive-file-list">
+              {files.map((file) => (
+                <button
+                  className="drive-file-option"
+                  disabled={Boolean(importingFileId)}
+                  key={file.id}
+                  onClick={() => onSelect(file)}
+                  type="button"
+                >
+                  <span className="drive-file-icon">
+                    {importingFileId === file.id ? (
+                      <Loader2 className="spin" size={18} strokeWidth={2.3} />
+                    ) : (
+                      <FileText size={18} strokeWidth={2.3} />
+                    )}
+                  </span>
+                  <span className="drive-file-copy">
+                    <strong>{file.name}</strong>
+                    <small>{file.size || file.mimeType}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="danger-text">No test files were found.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProcessTracker({
   results,
   currentStep,
@@ -453,8 +520,10 @@ function App() {
   const [apiHealth, setApiHealth] = useState({ state: "checking" });
   const [aiHealth, setAiHealth] = useState({ state: "checking" });
   const [selectedFile, setSelectedFile] = useState(null);
-  const [driveFileUrl, setDriveFileUrl] = useState("");
-  const [driveImporting, setDriveImporting] = useState(false);
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveImportingFileId, setDriveImportingFileId] = useState("");
   const [extractionMode, setExtractionMode] = useState("rule");
   const [validationMode, setValidationMode] = useState("rule");
   const [results, setResults] = useState({});
@@ -464,7 +533,8 @@ function App() {
   const [activeResultKey, setActiveResultKey] = useState(null);
 
   const pipelineRunning = Boolean(currentStep);
-  const isBusy = pipelineRunning || driveImporting;
+  const driveImporting = Boolean(driveImportingFileId);
+  const isBusy = pipelineRunning || driveLoading || driveImporting;
   const explanation = results.explain?.explanation;
   const pdfPreviewUrl = useMemo(() => {
     if (!isPdfFile(selectedFile)) {
@@ -536,29 +606,45 @@ function App() {
     resetWorkflow();
   };
 
-  const handleDriveImport = async () => {
-    const fileUrl = driveFileUrl.trim();
-
-    if (!fileUrl) {
-      setError("Please paste a public Google Drive PDF or TXT file link first.");
-      return;
-    }
+  const openDrivePicker = async () => {
+    setDrivePickerOpen(true);
+    setError("");
 
     try {
-      setDriveImporting(true);
-      resetWorkflow();
-
-      const importedFile = await importGoogleDriveFile(fileUrl);
-      setSelectedFile(importedFile);
+      setDriveLoading(true);
+      const response = await listGoogleDriveTestFiles();
+      setDriveFiles(response.files || []);
     } catch (err) {
       setError(
         getErrorMessage(
           err,
-          "Could not import the Google Drive file. Check that the file link is public."
+          "Could not load the Google Drive test files."
         )
       );
     } finally {
-      setDriveImporting(false);
+      setDriveLoading(false);
+    }
+  };
+
+  const selectDriveFile = async (driveFile) => {
+    try {
+      setDriveImportingFileId(driveFile.id);
+      resetWorkflow();
+
+      const importedFile = await importGoogleDriveFile({
+        fileId: driveFile.id,
+      });
+      setSelectedFile(importedFile);
+      setDrivePickerOpen(false);
+    } catch (err) {
+      setError(
+        getErrorMessage(
+          err,
+          "Could not import the selected Google Drive file."
+        )
+      );
+    } finally {
+      setDriveImportingFileId("");
     }
   };
 
@@ -947,40 +1033,6 @@ function App() {
             onFileChange={handleFileChange}
             selectedFile={selectedFile}
           />
-          <a
-            className="sample-files-link"
-            href={TEST_FILES_URL}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Open sample test files on Google Drive
-          </a>
-
-          <div className="drive-import-panel">
-            <div className="drive-import-copy">
-              <strong>Import from Google Drive</strong>
-              <small>Paste a public PDF or TXT file link from Google Drive.</small>
-            </div>
-            <div className="drive-import-controls">
-              <input
-                aria-label="Google Drive file link"
-                disabled={isBusy}
-                onChange={(event) => setDriveFileUrl(event.target.value)}
-                placeholder="Paste Google Drive file link"
-                type="url"
-                value={driveFileUrl}
-              />
-              <ActionButton
-                busy={driveImporting}
-                disabled={pipelineRunning || !driveFileUrl.trim()}
-                icon={UploadCloud}
-                onClick={handleDriveImport}
-                variant="secondary"
-              >
-                Import Drive File
-              </ActionButton>
-            </div>
-          </div>
 
           <div className="intake-actions">
             <ActionButton
@@ -990,6 +1042,15 @@ function App() {
               onClick={runClaimPipeline}
             >
               Upload and Process Claim
+            </ActionButton>
+            <ActionButton
+              busy={driveLoading}
+              disabled={pipelineRunning || driveImporting}
+              icon={UploadCloud}
+              onClick={openDrivePicker}
+              variant="secondary"
+            >
+              Upload from GDrive
             </ActionButton>
             {isPdfFile(selectedFile) && (
               <ActionButton
@@ -1041,6 +1102,15 @@ function App() {
         onClose={() => setActiveResultKey(null)}
         result={activeResult}
       />
+      {drivePickerOpen && (
+        <DriveFilePickerModal
+          files={driveFiles}
+          importingFileId={driveImportingFileId}
+          loading={driveLoading}
+          onClose={() => setDrivePickerOpen(false)}
+          onSelect={selectDriveFile}
+        />
+      )}
     </div>
   );
 }
