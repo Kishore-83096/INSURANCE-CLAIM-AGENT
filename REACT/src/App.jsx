@@ -94,6 +94,9 @@ const fieldLabels = {
   initialEstimate: "Initial estimate",
 };
 
+const TEST_FILES_URL =
+  "https://drive.google.com/drive/folders/1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ?usp=sharing";
+
 function formatFileSize(bytes) {
   if (!bytes && bytes !== 0) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -915,6 +918,14 @@ function App() {
             onFileChange={handleFileChange}
             selectedFile={selectedFile}
           />
+          <a
+            className="sample-files-link"
+            href={TEST_FILES_URL}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open sample test files on Google Drive
+          </a>
 
           <div className="intake-actions">
             <ActionButton

@@ -28,7 +28,7 @@ The final routing decision is rule-based and deterministic. AI is optional for k
 
 ## Testing PDFs
 
-For testing purposes, I created sample PDFs in `PDF_FILES(For testing)`.
+For testing purposes, I created sample PDFs in `PDF_FILES(For testing)`. The same test files are also available on Google Drive: [sample test files](https://drive.google.com/drive/folders/1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ?usp=sharing).
 
 I did not use the PDF provided with the assessment as the main test file because its internal text formatting caused incorrect extraction results and wrong answers. Instead, I used simple PDFs with clear text formatting and the required fields/cases mentioned in the assessment brief, so the extraction and routing flow can be tested reliably.
 

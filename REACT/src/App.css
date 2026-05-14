@@ -295,6 +295,19 @@ p {
   color: var(--muted);
 }
 
+.sample-files-link {
+  width: fit-content;
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.sample-files-link:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
 .intake-actions {
   display: flex;
   flex-wrap: wrap;
