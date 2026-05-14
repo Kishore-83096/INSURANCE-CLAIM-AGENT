@@ -1,10 +1,15 @@
 import os
 import re
 import json
+from io import BytesIO
+from urllib.parse import parse_qs, unquote, urlparse
 import fitz  # PyMuPDF
 
-from flask import request, jsonify, current_app
+import requests
+from flask import request, jsonify, current_app, send_file
 from openai import OpenAI
+from werkzeug.http import parse_options_header
+from werkzeug.utils import secure_filename
 
 
 # =========================
@@ -18,6 +23,7 @@ def home():
             "GET /api/health",
             "GET /api/nvidia/health",
             "POST /api/claims/upload",
+            "POST /api/claims/import-google-drive",
             "POST /api/claims/extract-text",
             "POST /api/claims/extract-fields",
             "POST /api/claims/ai/extract-fields",
@@ -147,6 +153,124 @@ def allowed_file(filename: str) -> bool:
     )
 
 
+def extract_google_drive_file_id(file_url: str) -> str:
+    parsed_url = urlparse((file_url or "").strip())
+    host = parsed_url.netloc.lower()
+
+    if host not in {
+        "drive.google.com",
+        "www.drive.google.com",
+        "drive.usercontent.google.com",
+        "docs.google.com",
+    }:
+        raise ValueError("Please provide a public Google Drive file link.")
+
+    query_params = parse_qs(parsed_url.query)
+
+    if query_params.get("id"):
+        return query_params["id"][0]
+
+    path_match = re.search(r"/(?:file/d|document/d)/([^/]+)", parsed_url.path)
+
+    if path_match:
+        return path_match.group(1)
+
+    raise ValueError(
+        "Could not find a Google Drive file ID. Open the Drive folder, copy a file link, and paste it here."
+    )
+
+
+def get_filename_from_response(response, fallback_filename: str) -> str:
+    content_disposition = response.headers.get("Content-Disposition", "")
+    content_type = response.headers.get("Content-Type", "").lower()
+
+    if "text/html" in content_type and not content_disposition:
+        raise ValueError(
+            "Google Drive did not return a downloadable file. Make sure the link points to a public PDF or TXT file, not the folder page."
+        )
+
+    _, options = parse_options_header(content_disposition)
+    filename = options.get("filename") or options.get("filename*")
+
+    if filename:
+        filename = unquote(str(filename).replace("UTF-8''", ""))
+    else:
+        filename = fallback_filename
+
+    filename = secure_filename(filename) or fallback_filename
+
+    if allowed_file(filename):
+        return filename
+
+    if "pdf" in content_type:
+        return f"{filename.rsplit('.', 1)[0]}.pdf"
+
+    if "text" in content_type:
+        return f"{filename.rsplit('.', 1)[0]}.txt"
+
+    raise ValueError("Google Drive file must be a PDF or TXT file.")
+
+
+def get_google_drive_confirm_token(response):
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            return value
+
+    content_type = response.headers.get("Content-Type", "").lower()
+
+    if "text/html" not in content_type:
+        return None
+
+    match = re.search(r"confirm=([0-9A-Za-z_]+)", response.text)
+
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def download_google_drive_file(file_url: str):
+    file_id = extract_google_drive_file_id(file_url)
+    download_url = "https://drive.google.com/uc"
+    params = {"export": "download", "id": file_id}
+    max_file_size = current_app.config["MAX_CONTENT_LENGTH"]
+
+    with requests.Session() as session:
+        response = session.get(download_url, params=params, stream=True, timeout=30)
+        response.raise_for_status()
+
+        confirm_token = get_google_drive_confirm_token(response)
+
+        if confirm_token:
+            params["confirm"] = confirm_token
+            response = session.get(download_url, params=params, stream=True, timeout=30)
+            response.raise_for_status()
+
+        filename = get_filename_from_response(response, "google-drive-claim.pdf")
+        file_buffer = BytesIO()
+        downloaded_size = 0
+
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+
+            downloaded_size += len(chunk)
+
+            if downloaded_size > max_file_size:
+                raise ValueError(
+                    f"Google Drive file is too large. Maximum size is {max_file_size} bytes."
+                )
+
+            file_buffer.write(chunk)
+
+    if file_buffer.tell() == 0:
+        raise ValueError("Google Drive returned an empty file.")
+
+    file_buffer.seek(0)
+
+    return file_buffer, filename
+
+
 def save_uploaded_file(uploaded_file):
     if uploaded_file.filename == "":
         raise ValueError("No selected file.")
@@ -193,6 +317,47 @@ def upload_claim_file():
             "message": "File uploaded successfully.",
             "file": file_data
         }), 200
+
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 400
+
+
+def import_google_drive_file():
+    data = request.get_json(silent=True) or {}
+    file_url = data.get("fileUrl", "")
+
+    if not file_url:
+        return jsonify({
+            "success": False,
+            "error": "fileUrl is required."
+        }), 400
+
+    try:
+        file_buffer, filename = download_google_drive_file(file_url)
+        mimetype = "application/pdf" if filename.lower().endswith(".pdf") else "text/plain"
+
+        response = send_file(
+            file_buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype=mimetype
+        )
+
+        response.headers["X-Claim-Filename"] = filename
+        response.headers["Access-Control-Expose-Headers"] = (
+            "Content-Disposition, X-Claim-Filename"
+        )
+
+        return response
+
+    except requests.RequestException as error:
+        return jsonify({
+            "success": False,
+            "error": f"Could not download the Google Drive file: {str(error)}"
+        }), 400
 
     except Exception as error:
         return jsonify({

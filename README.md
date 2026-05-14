@@ -19,7 +19,7 @@ The final routing decision is rule-based and deterministic. AI is optional for k
 
 ## Main Flow
 
-1. Upload a PDF claim document.
+1. Upload a PDF claim document from your computer or import a public PDF/TXT file link from Google Drive.
 2. Extract raw text from the file.
 3. Extract key-value claim fields using rule-based logic or optional AI.
 4. Validate required claim fields using rule-based logic or optional AI.
@@ -29,6 +29,8 @@ The final routing decision is rule-based and deterministic. AI is optional for k
 ## Testing PDFs
 
 For testing purposes, I created sample PDFs in `PDF_FILES(For testing)`. The same test files are also available on Google Drive: [sample test files](https://drive.google.com/drive/folders/1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ?usp=sharing).
+
+In the React upload section, you can either select a local PDF/TXT file or import a file directly from Google Drive. To use the Drive import, open the sample test files folder, copy the share link for one PDF/TXT file, paste that file link into the Google Drive import field, and click `Import Drive File`. Paste an individual file link, not the folder link.
 
 I did not use the PDF provided with the assessment as the main test file because its internal text formatting caused incorrect extraction results and wrong answers. Instead, I used simple PDFs with clear text formatting and the required fields/cases mentioned in the assessment brief, so the extraction and routing flow can be tested reliably.
 
@@ -40,6 +42,7 @@ I did not use the PDF provided with the assessment as the main test file because
 | GET | `/api/health` | Checks if the Flask backend is running. |
 | GET | `/api/nvidia/health` | Checks if NVIDIA AI is configured and reachable. |
 | POST | `/api/claims/upload` | Uploads a PDF claim file. |
+| POST | `/api/claims/import-google-drive` | Downloads a public Google Drive PDF/TXT file so React can process it. |
 | POST | `/api/claims/extract-text` | Extracts raw text from the uploaded PDF file. |
 | POST | `/api/claims/extract-fields` | Extracts key-value claim fields using rule-based logic. |
 | POST | `/api/claims/ai/extract-fields` | Optionally extracts key-value claim fields using NVIDIA AI. |

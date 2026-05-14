@@ -19,6 +19,7 @@ import {
   checkNvidiaHealth,
   uploadClaimFile,
   extractClaimText,
+  importGoogleDriveFile,
   extractClaimFields,
   aiExtractClaimFields,
   validateClaimFields,
@@ -452,6 +453,8 @@ function App() {
   const [apiHealth, setApiHealth] = useState({ state: "checking" });
   const [aiHealth, setAiHealth] = useState({ state: "checking" });
   const [selectedFile, setSelectedFile] = useState(null);
+  const [driveFileUrl, setDriveFileUrl] = useState("");
+  const [driveImporting, setDriveImporting] = useState(false);
   const [extractionMode, setExtractionMode] = useState("rule");
   const [validationMode, setValidationMode] = useState("rule");
   const [results, setResults] = useState({});
@@ -461,7 +464,7 @@ function App() {
   const [activeResultKey, setActiveResultKey] = useState(null);
 
   const pipelineRunning = Boolean(currentStep);
-  const isBusy = pipelineRunning;
+  const isBusy = pipelineRunning || driveImporting;
   const explanation = results.explain?.explanation;
   const pdfPreviewUrl = useMemo(() => {
     if (!isPdfFile(selectedFile)) {
@@ -531,6 +534,32 @@ function App() {
     const file = event.target.files?.[0] || null;
     setSelectedFile(file);
     resetWorkflow();
+  };
+
+  const handleDriveImport = async () => {
+    const fileUrl = driveFileUrl.trim();
+
+    if (!fileUrl) {
+      setError("Please paste a public Google Drive PDF or TXT file link first.");
+      return;
+    }
+
+    try {
+      setDriveImporting(true);
+      resetWorkflow();
+
+      const importedFile = await importGoogleDriveFile(fileUrl);
+      setSelectedFile(importedFile);
+    } catch (err) {
+      setError(
+        getErrorMessage(
+          err,
+          "Could not import the Google Drive file. Check that the file link is public."
+        )
+      );
+    } finally {
+      setDriveImporting(false);
+    }
   };
 
   const savePhaseResult = (key, data) => {
@@ -926,6 +955,32 @@ function App() {
           >
             Open sample test files on Google Drive
           </a>
+
+          <div className="drive-import-panel">
+            <div className="drive-import-copy">
+              <strong>Import from Google Drive</strong>
+              <small>Paste a public PDF or TXT file link from Google Drive.</small>
+            </div>
+            <div className="drive-import-controls">
+              <input
+                aria-label="Google Drive file link"
+                disabled={isBusy}
+                onChange={(event) => setDriveFileUrl(event.target.value)}
+                placeholder="Paste Google Drive file link"
+                type="url"
+                value={driveFileUrl}
+              />
+              <ActionButton
+                busy={driveImporting}
+                disabled={pipelineRunning || !driveFileUrl.trim()}
+                icon={UploadCloud}
+                onClick={handleDriveImport}
+                variant="secondary"
+              >
+                Import Drive File
+              </ActionButton>
+            </div>
+          </div>
 
           <div className="intake-actions">
             <ActionButton

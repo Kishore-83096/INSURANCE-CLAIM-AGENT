@@ -2,6 +2,36 @@ import axios from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
+function getFilenameFromDisposition(contentDisposition) {
+  if (!contentDisposition) return "";
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+
+  if (utf8Match) {
+    return decodeURIComponent(utf8Match[1].replace(/"/g, ""));
+  }
+
+  const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+
+  return filenameMatch ? filenameMatch[1] : "";
+}
+
+function getFilenameFromHeaders(headers) {
+  return (
+    headers["x-claim-filename"] ||
+    getFilenameFromDisposition(headers["content-disposition"]) ||
+    "google-drive-claim.pdf"
+  );
+}
+
+function tryParseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 export const uploadClaimFile = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -34,6 +64,37 @@ export const extractClaimText = async (file) => {
   );
 
   return response.data;
+};
+
+export const importGoogleDriveFile = async (fileUrl) => {
+  let response;
+
+  try {
+    response = await axios.post(
+      `${API_BASE_URL}/api/claims/import-google-drive`,
+      { fileUrl },
+      { responseType: "blob" }
+    );
+  } catch (error) {
+    if (error.response?.data instanceof Blob) {
+      const errorText = await error.response.data.text();
+      const errorJson = tryParseJson(errorText);
+
+      throw new Error(
+        errorJson?.error || errorJson?.message || errorText || "Google Drive import failed.",
+        { cause: error }
+      );
+    }
+
+    throw error;
+  }
+
+  const filename = getFilenameFromHeaders(response.headers);
+  const fileType = filename.toLowerCase().endsWith(".txt")
+    ? "text/plain"
+    : "application/pdf";
+
+  return new File([response.data], filename, { type: fileType });
 };
 
 export const extractClaimFields = async (rawText) => {
