@@ -2,6 +2,7 @@ import os
 import re
 import json
 from html import unescape as html_unescape
+from html.parser import HTMLParser
 from io import BytesIO
 from urllib.parse import parse_qs, unquote, urlparse
 import fitz  # PyMuPDF
@@ -16,6 +17,11 @@ TEST_FILES_FOLDER_ID = "1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ"
 TEST_FILES_FOLDER_URL = (
     f"https://drive.google.com/drive/folders/{TEST_FILES_FOLDER_ID}?usp=sharing"
 )
+
+GOOGLE_DRIVE_ALLOWED_MIME_TYPES = {
+    "pdf": "application/pdf",
+    "txt": "text/plain",
+}
 
 
 # =========================
@@ -167,6 +173,66 @@ def build_google_drive_file_url(file_id: str) -> str:
     return f"https://drive.google.com/file/d/{file_id}/view"
 
 
+def get_google_drive_mime_type(filename: str) -> str:
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return GOOGLE_DRIVE_ALLOWED_MIME_TYPES.get(extension, "")
+
+
+def extract_google_drive_filename(value: str) -> str:
+    value = html_unescape(value or "").strip()
+    match = re.search(r'([^"<>/\\]+?\.(?:pdf|txt))(?=\s|$)', value, re.IGNORECASE)
+
+    if not match:
+        return ""
+
+    return match.group(1).strip()
+
+
+def add_google_drive_file(files: list, seen_ids: set, file_id: str, filename: str, size: str = ""):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,}", file_id or ""):
+        return
+
+    if file_id in seen_ids:
+        return
+
+    mime_type = get_google_drive_mime_type(filename)
+
+    if not mime_type:
+        return
+
+    seen_ids.add(file_id)
+
+    files.append({
+        "id": file_id,
+        "name": filename,
+        "mimeType": mime_type,
+        "size": size,
+        "url": build_google_drive_file_url(file_id)
+    })
+
+
+class GoogleDriveFolderHTMLParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.files = []
+        self.seen_ids = set()
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        file_id = attributes.get("data-id")
+
+        if not file_id:
+            return
+
+        filename = (
+            extract_google_drive_filename(attributes.get("data-tooltip", ""))
+            or extract_google_drive_filename(attributes.get("aria-label", ""))
+        )
+
+        if filename:
+            add_google_drive_file(self.files, self.seen_ids, file_id, filename)
+
+
 def extract_google_drive_file_id(file_url: str) -> str:
     parsed_url = urlparse((file_url or "").strip())
     host = parsed_url.netloc.lower()
@@ -194,11 +260,7 @@ def extract_google_drive_file_id(file_url: str) -> str:
     )
 
 
-def parse_google_drive_folder_files(folder_html: str) -> list:
-    decoded_html = html_unescape(unquote(folder_html))
-    decoded_html = decoded_html.replace("\\u003d", "=")
-    decoded_html = decoded_html.replace("\\u0026", "&")
-
+def parse_embedded_google_drive_files(decoded_html: str, files: list, seen_ids: set):
     file_pattern = re.compile(
         r'null,"([A-Za-z0-9_-]{20,})"\],null,null,null,'
         r'"(application/pdf|text/plain)".{0,1200}?'
@@ -211,16 +273,8 @@ def parse_google_drive_folder_files(folder_html: str) -> list:
         re.IGNORECASE
     )
 
-    files = []
-    seen_ids = set()
-
     for match in file_pattern.finditer(decoded_html):
         file_id = match.group(1)
-
-        if file_id in seen_ids:
-            continue
-
-        seen_ids.add(file_id)
         entry_html = decoded_html[match.start():match.end() + 900]
         size_match = size_pattern.search(entry_html)
         size = ""
@@ -229,13 +283,21 @@ def parse_google_drive_folder_files(folder_html: str) -> list:
             size = size_match.group(1).split("\\n", 1)[0]
             size = size.split("\n", 1)[0].strip()
 
-        files.append({
-            "id": file_id,
-            "name": match.group(3),
-            "mimeType": match.group(2),
-            "size": size,
-            "url": build_google_drive_file_url(file_id)
-        })
+        add_google_drive_file(files, seen_ids, file_id, match.group(3), size)
+
+
+def parse_google_drive_folder_files(folder_html: str) -> list:
+    decoded_html = html_unescape(unquote(folder_html))
+    decoded_html = decoded_html.replace("\\u003d", "=")
+    decoded_html = decoded_html.replace("\\u0026", "&")
+
+    html_parser = GoogleDriveFolderHTMLParser()
+    html_parser.feed(decoded_html)
+
+    files = html_parser.files
+    seen_ids = html_parser.seen_ids
+
+    parse_embedded_google_drive_files(decoded_html, files, seen_ids)
 
     return files
 
