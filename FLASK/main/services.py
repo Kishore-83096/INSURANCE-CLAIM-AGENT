@@ -13,11 +13,6 @@ from openai import OpenAI
 from werkzeug.http import parse_options_header
 from werkzeug.utils import secure_filename
 
-TEST_FILES_FOLDER_ID = "1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ"
-TEST_FILES_FOLDER_URL = (
-    f"https://drive.google.com/drive/folders/{TEST_FILES_FOLDER_ID}?usp=sharing"
-)
-
 GOOGLE_DRIVE_ALLOWED_MIME_TYPES = {
     "pdf": "application/pdf",
     "txt": "text/plain",
@@ -303,7 +298,7 @@ def parse_google_drive_folder_files(folder_html: str) -> list:
 
 
 def get_google_drive_test_files() -> list:
-    response = requests.get(TEST_FILES_FOLDER_URL, timeout=30)
+    response = requests.get(current_app.config['PDF_GDRIVE'], timeout=30)
     response.raise_for_status()
 
     files = parse_google_drive_folder_files(response.text)
@@ -465,7 +460,7 @@ def list_google_drive_test_files():
     try:
         return jsonify({
             "success": True,
-            "folderUrl": TEST_FILES_FOLDER_URL,
+            "folderUrl": current_app.config['PDF_GDRIVE'],
             "files": get_google_drive_test_files()
         }), 200
 

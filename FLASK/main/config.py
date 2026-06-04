@@ -35,5 +35,8 @@ class Config:
     NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL","https://integrate.api.nvidia.com/v1")
     NVIDIA_MODEL = os.getenv("NVIDIA_MODEL","google/gemma-3-27b-it")
 
+    # Google Drive test files folder
+    PDF_GDRIVE = os.getenv("PDF_Gdrive", "https://drive.google.com/drive/folders/1NMWDtYzOZNDaaS4-9l68Rps46H0UdAzJ")
+
     # Optional: CORS settings for development
     CORS_ORIGINS = get_cors_origins()
